@@ -218,8 +218,12 @@ class LaptopTestApp(tk.Tk):
         # 기타 테스트 관련 변수들
         self.disabled_hwids = []
         self.test_done = {
-            "키보드": False
+            "키보드": False,
+            "카메라": False,
+            "USB": False,
         }
+
+        # 각 테스트의 상태를 저장할 딕셔너리
         self.test_status_labels = {}
         self.failed_keys = []  # 누르지 못한 키를 저장할 변수
 
@@ -230,6 +234,7 @@ class LaptopTestApp(tk.Tk):
         self.progress_label = ttk.Label(main_frame, text=self.get_progress_text(), font=("Arial", 12))
         self.progress_label.pack(pady=5)
 
+        # 1) 키보드드
         kb_frame = ttk.Frame(main_frame)
         kb_frame.pack(fill="x", pady=3)
         kb_button = ttk.Button(kb_frame, text="키보드 테스트", command=self.open_keyboard_test)
@@ -242,20 +247,53 @@ class LaptopTestApp(tk.Tk):
         self.failed_keys_button = ttk.Button(kb_frame, text="누르지 못한 키 보기", command=self.show_failed_keys, state="disabled")
         self.failed_keys_button.pack(side="left", padx=5)
 
-        # (추가 테스트 버튼 생략)
+        # 2) USB
+        usb_frame = ttk.Frame(main_frame)
+        usb_frame.pack(fill="x", pady=3)
 
+        usb_button = ttk.Button(usb_frame, text="USB 연결 확인", command=self.check_usb_devices)
+        usb_button.pack(side="left")
+
+        usb_status = ttk.Label(usb_frame, text="테스트 전", foreground="red")
+        usb_status.pack(side="left", padx=10)
+        self.test_status_labels["USB"] = usb_status
+
+        # 3) 카메라
+        cam_frame = ttk.Frame(main_frame)
+        cam_frame.pack(fill="x", pady=3)
+
+        cam_button = ttk.Button(cam_frame, text="카메라(웹캠) 테스트", command=self.open_camera_test)
+        cam_button.pack(side="left")
+
+        cam_status = ttk.Label(cam_frame, text="테스트 전", foreground="red")
+        cam_status.pack(side="left", padx=10)
+        self.test_status_labels["카메라"] = cam_status
+
+
+    # ============ 진행 상황 텍스트 ============
     def get_progress_text(self):
         done_count = sum(self.test_done.values())
         total = len(self.test_done)
         return f"{done_count}/{total} 완료"
 
     def mark_test_complete(self, test_name):
+        """
+        특정 테스트를 완료 처리하고,
+        진행 상황 갱신 후, 모든 테스트가 끝났으면 팝업창 표시
+        - 완료 시 test_status_labels[test_name]를 "테스트 완료"(파란색)로 변경
+        """
         if test_name in self.test_done and not self.test_done[test_name]:
             self.test_done[test_name] = True
+            # 진행 상황 라벨 갱신
             self.progress_label.config(text=self.get_progress_text())
+            
+            # 상태 라벨 업데이트트 
             status_label = self.test_status_labels[test_name]
             status_label.config(text="테스트 완료", foreground="blue")
+
+            # 모든 테스트가 완료되었는지 확인인
             if all(self.test_done.values()):
+                # 완료 확인 표시창(팝업업)
                 messagebox.showinfo("모든 테스트 완료", "모든 테스트를 완료했습니다.\n수고하셨습니다!")
 
     def show_failed_keys(self):
@@ -272,6 +310,7 @@ class LaptopTestApp(tk.Tk):
         else:
             messagebox.showinfo("확인", "누르지 못한 키가 없습니다.")
 
+    # ============ 키보드 테스트 ============
     def open_keyboard_test(self):
         kb_window = tk.Toplevel(self)
         kb_window.title("키보드 테스트")
@@ -455,6 +494,73 @@ class LaptopTestApp(tk.Tk):
                 self.failed_keys_button.config(state="disabled")
                 self.close_keyboard_window()
                 self.mark_test_complete("키보드")
+
+    # ============ 카메라 테스트 ============
+    def open_camera_test(self):
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        if not cap.isOpened():
+            messagebox.showerror("카메라 오류", "카메라를 열 수 없습니다. 장치를 확인해주세요.")
+            self.test_status_labels["카메라"].config(text="오류 발생", foreground="red")
+            return
+
+        messagebox.showinfo("카메라 테스트", "카메라 창이 뜨면 영상이 보이는지 확인하세요.상단 X 버튼을 마우스로 누르면 종료됩니다.")
+        window_name = "Camera Test - X to exit"
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                messagebox.showerror("카메라 오류", "카메라 프레임을 읽을 수 없습니다.")
+                break
+            cv2.imshow(window_name, frame)
+            key = cv2.waitKey(1) & 0xFF
+            # ESC 키를 누르면 종료
+            if key == 27:
+                break
+            # X 버튼(창 닫기)로 창이 닫혔는지 체크
+            if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
+                break
+
+        cap.release()
+        cv2.destroyAllWindows()
+        self.mark_test_complete("카메라")
+
+
+
+    # ============ USB 체크 ============
+    def check_usb_devices(self):
+        """
+        USB 장치 정보를 통해 세 개의 USB 포트(Port_#0001, Port_#0002, Port_#0003)의 연결 상태를 확인한다.
+        각 포트에 연결된 장치가 있다면 해당 포트는 '정상'으로, 없다면 '오류 발생'으로 처리한다.
+        """
+        try:
+            wmi_obj = win32com.client.GetObject("winmgmts:")
+            pnp_entities = wmi_obj.InstancesOf("Win32_PnPEntity")
+            # 미리 각 포트의 상태를 False (연결 안됨)로 초기화
+            port_status = {
+                "Port_#0001.Hub_#0001": False,
+                "Port_#0002.Hub_#0001": False,
+                "Port_#0003.Hub_#0001": False
+            }
+            
+            # 모든 PnP 장치 정보를 순회하면서, DeviceID 또는 Description에 각 포트 문자열이 있는지 확인
+            for entity in pnp_entities:
+                device_id = entity.DeviceID or ""
+                description = entity.Name or ""
+                for port in port_status.keys():
+                    if port.upper() in device_id.upper() or port.upper() in description.upper():
+                        port_status[port] = True
+            
+            # 결과 메시지 구성
+            status_message = ""
+            for port, connected in port_status.items():
+                status_message += f"{port}: {'정상' if connected else '오류 발생'}\n"
+            
+            messagebox.showinfo("USB 포트 상태", f"각 USB 포트 상태:\n\n{status_message}")
+        
+        except Exception as e:
+            messagebox.showerror("USB 오류", f"USB 포트 상태를 가져오는 중 오류 발생:\n{e}")
+        finally:
+            # 테스트 완료 처리(USB 테스트에 해당)
+            self.mark_test_complete("USB")
 
 
 if __name__ == "__main__":
