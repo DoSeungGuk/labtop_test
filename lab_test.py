@@ -12,6 +12,7 @@ import time
 import ctypes
 from ctypes import wintypes  # ctypes.wintypes 임포트
 
+
 # ---------------------------------------------
 # LRESULT, LONG_PTR를 플랫폼(32/64bit)에 맞게 정의
 # ---------------------------------------------
@@ -35,6 +36,8 @@ RIDEV_INPUTSINK = 0x00000100
 RIDEV_NOLEGACY = 0x00000030  # legacy 메시지 차단
 
 RI_KEY_BREAK = 0x01
+# 상단에 확장 키 플래그 상수 정의
+RI_KEY_E0 = 0x02
 
 # user32 핸들
 user32 = ctypes.windll.user32
@@ -128,6 +131,7 @@ VK_MAPPING = {
     0x0D: "ENTER",
     0x1B: "ESC",
     0x09: "TAB",
+    0x08: "BACK",
 
     # 기능키(F1~F12)
     0x70: "F1",  0x71: "F2",  0x72: "F3",  0x73: "F4",
@@ -137,10 +141,10 @@ VK_MAPPING = {
     # 편집/제어키 (Insert, Delete, Home, End, PgUp, PgDn)
     0x2D: "INS",
     0x2E: "DEL",
-    0x24: "HOME",
-    0x23: "END",
-    0x21: "PGUP",
-    0x22: "PGDN",
+    # 0x24: "HOME",
+    # 0x23: "END",
+    # 0x21: "PGUP",
+    # 0x22: "PGDN",
 
     # 방향키
     0x25: "LEFT",
@@ -149,9 +153,8 @@ VK_MAPPING = {
     0x28: "DOWN",
 
     # Lock키 (CapsLock, NumLock, ScrollLock)
-    0x14: "CAPSLOCK",
+    0x14: "CAPS",
     0x90: "NUMLOCK",
-    0x91: "SCROLLLOCK",
 
     # 숫자패드(Numpad)
     0x60: "NUM0",
@@ -166,19 +169,36 @@ VK_MAPPING = {
     0x69: "NUM9",
     0x6A: "NUM *",
     0x6B: "NUM +",
+    0x6C: "NUMENTER",
     0x6D: "NUM -",
     0x6E: "NUM .",
     0x6F: "NUM /",
 
+
     # 기타 (PrintScreen, Pause/Break 등)
-    0x2C: "PRTSCR",
-    0x13: "PAUSE",
+    0x2C: "PRT",
+    0xBB: "=",
+    0xBD: "-",
+    0xC0: "`",
+    0xDB: "[",
+    0xDD: "]",
+    0xDC: "\\",
+    0xBA: ";",
+    0xDE: "'",
+    0xBC: ",",
+    0xBE: ".",
+    0xBF: "/",
+    # 0x13: "PAUSE",
 
     # 수정/조합키(Shift, Ctrl, Alt 등) - 일반적으로 누르면 VKey 이벤트가 뜨긴 하나,
     # RawInput에서 활용시 눌렀다는 것만 인지 가능(문자 입력 X)
-    0x10: "SHIFT",
+    0xA0: "LSHIFT",
+    0xA1: "RSHIFT",
     0x11: "CTRL",
+    0x5B: "WINDOW",
     0x12: "ALT",
+    0x15: "한/영",
+    0x19: "한자",
 }
 
 # 새로운 WndProc 시그니처
@@ -192,7 +212,7 @@ class LaptopTestApp(tk.Tk):
 
         # 내부 키보드의 Raw Input device 문자열(화이트리스트)
         self.INTERNAL_HWIDS = [
-            "\\ACPI#MSFT0001"
+            "\\ACPI#MSF0001"
         ]
 
         # 기타 테스트 관련 변수들
@@ -201,6 +221,7 @@ class LaptopTestApp(tk.Tk):
             "키보드": False
         }
         self.test_status_labels = {}
+        self.failed_keys = []  # 누르지 못한 키를 저장할 변수
 
         main_frame = ttk.Frame(self)
         main_frame.pack(padx=20, pady=20, fill="both", expand=True)
@@ -216,6 +237,10 @@ class LaptopTestApp(tk.Tk):
         kb_status = ttk.Label(kb_frame, text="테스트 전", foreground="red")
         kb_status.pack(side="left", padx=10)
         self.test_status_labels["키보드"] = kb_status
+
+        # 누르지 못한 키를 확인할 버튼(기본 비활성화)
+        self.failed_keys_button = ttk.Button(kb_frame, text="누르지 못한 키 보기", command=self.show_failed_keys, state="disabled")
+        self.failed_keys_button.pack(side="left", padx=5)
 
         # (추가 테스트 버튼 생략)
 
@@ -233,43 +258,57 @@ class LaptopTestApp(tk.Tk):
             if all(self.test_done.values()):
                 messagebox.showinfo("모든 테스트 완료", "모든 테스트를 완료했습니다.\n수고하셨습니다!")
 
+    def show_failed_keys(self):
+        # 누르지 못한 키가 있을 때 이를 표시하는 창 생성
+        if self.failed_keys:
+            failed_win = tk.Toplevel(self)
+            failed_win.title("미처 누르지 못한 키 목록")
+            failed_win.geometry("300x200")
+            info_label = ttk.Label(failed_win, text="누르지 못한 키:")
+            info_label.pack(padx=10, pady=10)
+            failed_keys_str = ", ".join(sorted(self.failed_keys))
+            keys_label = ttk.Label(failed_win, text=failed_keys_str, font=("Arial", 12))
+            keys_label.pack(padx=10, pady=10)
+        else:
+            messagebox.showinfo("확인", "누르지 못한 키가 없습니다.")
+
     def open_keyboard_test(self):
         kb_window = tk.Toplevel(self)
         kb_window.title("키보드 테스트")
-        kb_window.geometry("1280x720")
+        kb_window.geometry("1200x500")
         info_label = ttk.Label(kb_window, text="이 창에 포커스를 두고\n모든 키를 한 번씩 눌러보세요.\n완료 시 창이 닫힙니다.")
-        info_label.pack(pady=8)
+        info_label.pack(pady=5)
 
         keyboard_layout = [
             # 함수키 라인 (F1 ~ F12)
             ["F1", "F2", "F3", "F4", "F5", "F6",
-            "F7", "F8", "F9", "F10", "F11", "F12"],
+             "F7", "F8", "F9", "F10", "F11", "F12"],
 
-            # 숫자열 & 편집 키 (INS, DEL, HOME, END, PGUP, PGDN)
-            ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0",
-            "INS", "DEL", "HOME", "END", "PGUP", "PGDN"],
-
+            # 숫자열 & 편집 키 (INS, DEL 등)
+            ["`", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", "BACK",
+             "INS", "DEL"],
+                
             # QWERTY 1
-            ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+            ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", "\\"],
             # QWERTY 2
-            ["A", "S", "D", "F", "G", "H", "J", "K", "L", "ENTER"],
+            ["A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'", "ENTER"],
             # QWERTY 3
-            ["Z", "X", "C", "V", "B", "N", "M", "SPACE"],
+            ["Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", "SPACE"],
 
             # 방향키
             ["UP", "LEFT", "DOWN", "RIGHT"],
 
             # Lock 키들
-            ["CAPSLOCK", "NUMLOCK", "SCROLLLOCK"],
+            ["CAPS", "NUMLOCK"],
 
             # 숫자패드
             ["NUM7", "NUM8", "NUM9", "NUM /",
-            "NUM4", "NUM5", "NUM6", "NUM *",
-            "NUM1", "NUM2", "NUM3", "NUM -",
-            "NUM0", "NUM .", "NUM +"],
+             "NUM4", "NUM5", "NUM6", "NUM *",
+             "NUM1", "NUM2", "NUM3", "NUM -",
+             "NUM0", "NUM .", "NUM +", "NUMENTER"],
 
             # 기타
-            ["ESC", "TAB", "SHIFT", "CTRL", "ALT", "PRTSCR", "PAUSE"]
+            ["ESC", "TAB", "LSHIFT", "RSHIFT", "CTRL", "WINDOW", "ALT", "PRT", "한/영", "한자"]
         ]
 
         self.all_keys = set()
@@ -281,7 +320,7 @@ class LaptopTestApp(tk.Tk):
                 key_upper = key.upper()
                 self.all_keys.add(key_upper)
                 btn = tk.Label(
-                    row_frame, text=key, width=10, borderwidth=1, relief="solid",
+                    row_frame, text=key, width=5, borderwidth=1, relief="solid",
                     font=("Arial", 12), background="lightgray"
                 )
                 btn.pack(side="left", padx=3)
@@ -296,28 +335,68 @@ class LaptopTestApp(tk.Tk):
         # 새 콜백 함수 정의 (WndProc)
         def raw_input_wnd_proc(hWnd, msg, wParam, lParam):
             if msg == WM_NCDESTROY:
-                # 창 파괴 시 원래 WndProc 복원
                 if self._kb_old_wnd_proc is not None:
                     user32.SetWindowLongPtrW(hWnd, GWL_WNDPROC, self._kb_old_wnd_proc)
                     self._kb_old_wnd_proc = None
                 return 0
 
             if msg == WM_INPUT:
-                # WM_INPUT 메시지 처리
                 size = ctypes.c_uint(0)
                 if user32.GetRawInputData(lParam, RID_INPUT, None, ctypes.byref(size), ctypes.sizeof(RAWINPUTHEADER)) == 0:
                     buffer = ctypes.create_string_buffer(size.value)
-                    if user32.GetRawInputData(
-                        lParam, RID_INPUT, buffer, ctypes.byref(size),
-                        ctypes.sizeof(RAWINPUTHEADER)
-                    ) == size.value:
+                    if user32.GetRawInputData(lParam, RID_INPUT, buffer, ctypes.byref(size), ctypes.sizeof(RAWINPUTHEADER)) == size.value:
                         raw = ctypes.cast(buffer, ctypes.POINTER(RAWINPUT)).contents
                         if raw.header.dwType == RIM_TYPEKEYBOARD:
-                            # 키 다운 이벤트인지 체크
                             if (raw.u.keyboard.Flags & RI_KEY_BREAK) == 0:
                                 vkey = raw.u.keyboard.VKey
-                                if vkey in VK_MAPPING:
+                                if vkey == 0x0D:
+                                    if raw.u.keyboard.Flags & RI_KEY_E0:
+                                        key_sym = "NUMENTER"
+                                    else:
+                                        key_sym = "ENTER"
+                                elif vkey == 0x10:
+                                    if raw.u.keyboard.MakeCode == 0x2A:
+                                        key_sym = "LSHIFT"
+                                    elif raw.u.keyboard.MakeCode == 0x36:
+                                        key_sym = "RSHIFT"
+                                    else:
+                                        key_sym = "SHIFT"
+                                elif vkey == 0x2D:
+                                    if raw.u.keyboard.Flags & RI_KEY_E0:
+                                        key_sym = "INS"
+                                    else:
+                                        key_sym = "NUMINS"
+                                elif vkey == 0x2E:
+                                    if raw.u.keyboard.Flags & RI_KEY_E0:
+                                        key_sym = "DEL"
+                                    else:
+                                        key_sym = "NUMDEL"
+                                elif vkey == 0x26:
+                                    if raw.u.keyboard.Flags & RI_KEY_E0:
+                                        key_sym = "UP"
+                                    else:
+                                        key_sym = "NUMUP"
+                                elif vkey == 0x25:
+                                    if raw.u.keyboard.Flags & RI_KEY_E0:
+                                        key_sym = "LEFT"
+                                    else:
+                                        key_sym = "NUMLEFT"
+                                elif vkey == 0x28:
+                                    if raw.u.keyboard.Flags & RI_KEY_E0:
+                                        key_sym = "DOWN"
+                                    else:
+                                        key_sym = "NUMDOWN"
+                                elif vkey == 0x27:
+                                    if raw.u.keyboard.Flags & RI_KEY_E0:
+                                        key_sym = "RIGHT"
+                                    else:
+                                        key_sym = "NUMRIGHT"
+                                elif vkey in VK_MAPPING:
                                     key_sym = VK_MAPPING[vkey]
+                                else:
+                                    key_sym = None
+
+                                if key_sym:
                                     device_name = get_device_name(raw.header.hDevice)
                                     if device_name:
                                         device_name_lower = device_name.lower().replace("\\", "#")
@@ -327,35 +406,36 @@ class LaptopTestApp(tk.Tk):
                                         )
                                     else:
                                         is_internal = False
-
+                                    print("키:", key_sym, "is_internal:", is_internal)
                                     if is_internal:
                                         self.on_raw_key(key_sym)
                 return 0
 
-            # 창이 이미 파괴된 상태인지 체크 (옵션)
             if not user32.IsWindow(hWnd):
                 return 0
 
-            # 그 외 메시지를 원래의 WndProc에 전달
             if self._kb_old_wnd_proc:
                 return user32.CallWindowProcW(self._kb_old_wnd_proc, hWnd, msg, wParam, lParam)
             else:
                 return user32.DefWindowProcW(hWnd, msg, wParam, lParam)
 
-        # Python이 콜백을 GC하지 않도록 클래스 멤버 변수로 참조
-        self._raw_input_wnd_proc = WNDPROC(raw_input_wnd_proc)
+        def on_close_keyboard_window():
+            if self.keys_not_pressed:
+                self.failed_keys = list(self.keys_not_pressed)
+                self.test_status_labels["키보드"].config(text="오류 발생", foreground="red")
+                # 버튼 활성화: 누르지 못한 키가 있을 경우
+                self.failed_keys_button.config(state="normal")
+            self.close_keyboard_window()
 
-        # SetWindowLongPtrW를 통해 새 WndProc 설정, Old WndProc 정수 주소 반환
+        kb_window.protocol("WM_DELETE_WINDOW", on_close_keyboard_window)
+        self._raw_input_wnd_proc = WNDPROC(raw_input_wnd_proc)
         cb_func_ptr = ctypes.cast(self._raw_input_wnd_proc, ctypes.c_void_p).value
-        cb_func_ptr = LONG_PTR(cb_func_ptr)  # 64/32bit에 맞게 long/long long 변환
+        cb_func_ptr = LONG_PTR(cb_func_ptr)
         old_proc = user32.SetWindowLongPtrW(hwnd, GWL_WNDPROC, cb_func_ptr)
-        
-        # old_proc은 정수 주소. 이후 CallWindowProcW 호출 시 사용
         self._kb_old_wnd_proc = old_proc
         self._kb_hwnd = hwnd
         self.kb_window_ref = kb_window
 
-    # 창 종료 시점에 WndProc 복원 및 창 닫기
     def close_keyboard_window(self):
         if hasattr(self, '_kb_hwnd') and self._kb_hwnd and self._kb_old_wnd_proc is not None:
             user32.SetWindowLongPtrW(self._kb_hwnd, GWL_WNDPROC, self._kb_old_wnd_proc)
@@ -363,7 +443,6 @@ class LaptopTestApp(tk.Tk):
         if hasattr(self, 'kb_window_ref'):
             self.kb_window_ref.destroy()
 
-    # 키를 누르면 라벨 색상 변경 후 모두 눌리면 테스트 완료
     def on_raw_key(self, key):
         print("Raw key processed:", key)
         if key in self.keys_not_pressed:
@@ -373,28 +452,10 @@ class LaptopTestApp(tk.Tk):
                 widget.config(background="black", foreground="white")
             if not self.keys_not_pressed:
                 messagebox.showinfo("키보드 테스트", "모든 키를 눌렀습니다! 테스트 통과!")
-                # 종료 전 원복
+                self.failed_keys_button.config(state="disabled")
                 self.close_keyboard_window()
                 self.mark_test_complete("키보드")
 
-    # 디스플레이 정보 예시
-    def show_display_info(self):
-        try:
-            wmi_obj = win32com.client.GetObject("winmgmts:")
-            monitors = wmi_obj.InstancesOf("Win32_VideoController")
-            disp_text = ""
-            for m in monitors:
-                name = m.Name
-                width = getattr(m, "CurrentHorizontalResolution", "Unknown")
-                height = getattr(m, "CurrentVerticalResolution", "Unknown")
-                disp_text += f"그래픽 장치: {name}\n해상도: {width} x {height}\n\n"
-            messagebox.showinfo("디스플레이 정보", disp_text.strip())
-        except Exception as e:
-            messagebox.showerror("에러", f"디스플레이 정보를 가져오는 중 오류 발생:\n{e}")
-        finally:
-            self.mark_test_complete("디스플레이")
-
-    # 나머지 테스트(카메라, 마우스, Wi-Fi, USB, 배터리, 사운드)는 동일하게 구성
 
 if __name__ == "__main__":
     app = LaptopTestApp()
