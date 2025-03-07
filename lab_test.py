@@ -5,8 +5,6 @@ from tkinter import messagebox
 import subprocess
 import cv2
 import win32com.client  # WMI (pywin32)
-import win32api
-import pyaudio
 import wave
 import time
 import ctypes
@@ -596,9 +594,9 @@ class LaptopTestApp(tk.Tk):
                 if entity.PNPDeviceID:
                     device_path = entity.PNPDeviceID.upper()
                     for port, expected_path_pattern in expected_device_paths.items():
-                        # print("expected_device_paths: ", expected_device_paths)
-                        # print("expected_path_pattern: ", expected_path_pattern)
-                        # print("port: ", port)
+                        print("expected_device_paths: ", expected_device_paths)
+                        print("expected_path_pattern: ", expected_path_pattern)
+                        print("port: ", port)
                         expected_path_prefix = expected_path_pattern.split("\\*")[0].upper()
                         print("expected_path_prefix: ", expected_path_prefix)
                         if expected_path_prefix in device_path:

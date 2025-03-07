@@ -492,15 +492,18 @@ class LaptopTestApp(tk.Tk):
             }
 
             for entity in pnp_entities:
-                if entity.PNPDeviceID:
-                    device_path = entity.PNPDeviceID.upper()
-                    for port, expected_path_pattern in expected_device_paths.items():
-                        # 단순 prefix(혹은 substring) 체크 예시
-                        expected_path_prefix = expected_path_pattern.split("\\*")[0].upper()
-                        if expected_path_prefix in device_path:
-                            self.usb_ports[port] = True
-                            self.usb_port_labels[port].config(text=f"{port}: 연결됨", background="lightgreen")
-                            break
+                if hasattr(entity, 'PNPDeviceID') and entity.PNPDeviceID:
+                        device_path = entity.PNPDeviceID.upper()    
+                        if entity.PNPDeviceID:
+                            for port, expected_path_pattern in expected_device_paths.items():
+                                # 단순 prefix(혹은 substring) 체크 예시
+                                expected_path_prefix = expected_path_pattern.split("\\*")[0].upper()
+                                if expected_path_prefix in device_path:
+                                    self.usb_ports[port] = True
+                                    self.usb_port_labels[port].config(text=f"{port}: 연결됨", background="lightgreen")
+                                    break
+                else:
+                    continue
 
             if all(self.usb_ports.values()):
                 self.usb_test_complete = True
