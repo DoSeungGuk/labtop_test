@@ -1,13 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
-import subprocess
 import cv2
 import win32com.client  # WMI (pywin32)
-import win32api
-import pyaudio
-import wave
-import time
 import ctypes
 from ctypes import wintypes  # ctypes.wintypes 임포트
 import psutil
@@ -192,7 +187,7 @@ class LaptopTestApp(tk.Tk):
             "키보드": False,
             "카메라": False,
             "USB": False,
-            "C타입": False,
+            "충전기": False,
         }
 
         self.failed_keys = []  # 누르지 못한 키
@@ -221,9 +216,9 @@ class LaptopTestApp(tk.Tk):
 
         # USB 테스트
         self.usb_ports = {
-            "Port_#0001.Hub_#0001": False,
-            "Port_#0002.Hub_#0001": False,
-            "Port_#0003.Hub_#0001": False,
+            "Port_1": False,
+            "Port_2": False,
+            "Port_3": False,
         }
         self.usb_test_complete = False
 
@@ -237,7 +232,7 @@ class LaptopTestApp(tk.Tk):
         self.usb_refresh_button.pack(side="left", padx=5)
 
         usb_status = ttk.Label(usb_frame, text="테스트 전", foreground="red")
-        usb_status.pack(side="left", padx=10)
+        usb_status.pack(side="left", padx=5)
         self.test_status_labels["USB"] = usb_status
 
         self.usb_port_labels = {}
@@ -254,11 +249,10 @@ class LaptopTestApp(tk.Tk):
         cam_status.pack(side="left", padx=10)
         self.test_status_labels["카메라"] = cam_status
 
-        # ---- C타입 테스트 부분(질문 코드 통합) ----
-        # C타입 포트 상태
+        # ---- 충전기 테스트 부분(질문 코드 통합) ----
+        # 충전기 포트 상태
         self.c_type_ports = {
-            "C타입 1": False,
-            "C타입 2": False,
+            "충전기": False,
         }
         self.c_type_test_complete = False
 
@@ -266,7 +260,7 @@ class LaptopTestApp(tk.Tk):
         c_type_frame.pack(fill="x", pady=3)
 
         # 질문 코드에서 start_btn → lab_test.py에서는 self.c_type_button
-        self.c_type_button = ttk.Button(c_type_frame, text="C타입 테스트 시작", command=self.start_c_type_check)
+        self.c_type_button = ttk.Button(c_type_frame, text="충전 테스트 시작", command=self.start_c_type_check)
         self.c_type_button.pack(side="left")
 
         # 질문 코드에서 refresh_btn → lab_test.py에서는 self.c_type_refresh_button
@@ -275,11 +269,11 @@ class LaptopTestApp(tk.Tk):
 
         c_type_status = ttk.Label(c_type_frame, text="테스트 전", foreground="red")
         c_type_status.pack(side="left", padx=10)
-        self.test_status_labels["C타입"] = c_type_status
+        self.test_status_labels["충전기"] = c_type_status
 
         self.c_type_port_labels = {}
         self.create_c_type_port_labels(main_frame)
-        # ---- C타입 테스트 부분 끝 ----
+        # ---- 충전기 테스트 부분 끝 ----
 
     # 진행 상황 텍스트
     def get_progress_text(self):
@@ -459,15 +453,15 @@ class LaptopTestApp(tk.Tk):
         usb_port_frame.pack(fill="x", pady=3)
         for port_name in self.usb_ports:
             label = ttk.Label(usb_port_frame, text=f"{port_name}: 연결 안됨",
-                              width=30, borderwidth=1, relief="solid")
+                              width=16, borderwidth=1, relief="solid")
             label.pack(side="left", padx=5)
             self.usb_port_labels[port_name] = label
 
     def start_usb_check(self):
         self.usb_ports = {
-            "Port_#0001.Hub_#0001": False,
-            "Port_#0002.Hub_#0001": False,
-            "Port_#0003.Hub_#0001": False,
+            "Port_1": False,
+            "Port_2": False,
+            "Port_3": False,
         }
         self.usb_test_complete = False
         for port_name, label in self.usb_port_labels.items():
@@ -484,11 +478,11 @@ class LaptopTestApp(tk.Tk):
             wmi_obj = win32com.client.GetObject("winmgmts:")
             pnp_entities = wmi_obj.InstancesOf("Win32_PnPEntity")
 
-            # 포트별 예상되는(혹은 사용 중인) 장치 인스턴스 경로를 여러분 환경에 맞춰 수정 가능
+            # 포트별 사용 중인 장치 인스턴스 경로를 환경에 맞춰 수정 가능
             expected_device_paths = {
-                "Port_#0001.Hub_#0001": "USB\\VID_25A7&PID_2410\\5&218DD721&0&1",
-                "Port_#0002.Hub_#0001": "USB\\VID_25A7&PID_2410\\5&218DD721&0&2",
-                "Port_#0003.Hub_#0001": "USB\\VID_25A7&PID_2410\\5&218DD721&0&3",
+                "Port_1": "USB\\VID_25A7&PID_2410\\5&218DD721&0&1",
+                "Port_2": "USB\\VID_25A7&PID_2410\\5&218DD721&0&2",
+                "Port_3": "USB\\VID_25A7&PID_2410\\5&218DD721&0&3",
             }
 
             for entity in pnp_entities:
@@ -543,7 +537,7 @@ class LaptopTestApp(tk.Tk):
         cv2.destroyAllWindows()
         self.mark_test_complete("카메라")
 
-    # ------------------ C타입 테스트(질문 코드 적용) ------------------
+    # ------------------ 충전 테스트 ------------------
     def create_c_type_port_labels(self, main_frame):
         c_type_port_frame = ttk.Frame(main_frame)
         c_type_port_frame.pack(fill="x", pady=3)
@@ -555,20 +549,20 @@ class LaptopTestApp(tk.Tk):
 
     def start_c_type_check(self):
         """
-        C타입 테스트 초기화 후 안내 메시지.
+        충전 테스트 초기화 후 안내 메시지.
         '포트 확인' 버튼을 통해 개별 포트 연결 여부를 체크한다.
         """
         # 포트 상태 초기화
-        self.c_type_ports = {"C타입 1": False, "C타입 2": False}
+        self.c_type_ports = {"충전기": False}
         for port, lbl in self.c_type_port_labels.items():
             lbl.config(text=f"{port}: 연결 안됨", background="SystemButtonFace")
 
         self.c_type_test_complete = False
-        self.test_status_labels["C타입"].config(text="테스트 중", foreground="orange")
+        self.test_status_labels["충전기"].config(text="테스트 중", foreground="orange")
 
         messagebox.showinfo(
-            "C타입 Test",
-            "모든 충전기를 분리한 후,\n각 포트에 하나씩 충전기를 꽂고\n'포트 확인' 버튼을 눌러주세요."
+            "충전 Test",
+            "충전기를 꽂고 포트 확인 버튼을 눌러주세요."
         )
         self.c_type_refresh_button.config(state="normal")
 
@@ -587,55 +581,46 @@ class LaptopTestApp(tk.Tk):
         """
         battery = psutil.sensors_battery()
         if battery is None:
-            messagebox.showerror("C타입 Error", "배터리 정보를 가져올 수 없습니다.")
+            messagebox.showerror("충전기 Error", "배터리 정보를 가져올 수 없습니다.")
             return
 
         if not battery.power_plugged:
             # 충전기가 전혀 연결 안 된 경우
             messagebox.showinfo(
-                "C타입 Test",
+                "충전기 Test",
                 "충전기가 연결되지 않았습니다.\n해당 포트에 충전기를 연결 후 다시 확인하세요."
             )
             return
 
-        # 아직 확인되지 않은 포트를 순차 처리 (C타입 1 -> C타입 2)
-        if not self.c_type_ports["C타입 1"]:
-            self.c_type_ports["C타입 1"] = True
-            self.c_type_port_labels["C타입 1"].config(
-                text="C타입 1: 연결됨 (충전 중)",
+        if not self.c_type_ports["충전기"]:
+            self.c_type_ports["충전기"] = True
+            self.c_type_port_labels["충전기"].config(
+                text="전원 연결됨 (충전 중)",
                 background="lightgreen"
             )
-            messagebox.showinfo("C타입 Test", "C타입 1번 포트 연결 확인 완료!")
-
-        elif not self.c_type_ports["C타입 2"]:
-            self.c_type_ports["C타입 2"] = True
-            self.c_type_port_labels["C타입 2"].config(
-                text="C타입 2: 연결됨 (충전 중)",
-                background="lightgreen"
-            )
-            messagebox.showinfo("C타입 Test", "C타입 2번 포트 연결 확인 완료!")
+            messagebox.showinfo("충전 Test", "충전 확인 완료!")
 
         else:
             # 두 포트 모두 이미 확인됨
-            messagebox.showinfo("C타입 Test", "모든 C타입 포트가 이미 확인되었습니다.")
+            messagebox.showinfo("충전 Test", "충전 가능 여부 확인되었습니다.")
 
         # 모두 연결되었다면 테스트 완료
         if all(self.c_type_ports.values()):
             self.c_type_test_complete = True
             self.c_type_refresh_button.config(state="disabled")
-            self.test_status_labels["C타입"].config(text="테스트 완료", foreground="blue")
+            self.test_status_labels["충전기"].config(text="테스트 완료", foreground="blue")
             # lab_test.py에서는 mark_test_complete() 호출 필요
-            self.mark_test_complete("C타입")
-            messagebox.showinfo("C타입 Test", "모든 C타입 포트 테스트 완료!")
+            self.mark_test_complete("충전기")
+            messagebox.showinfo("충전 Test", "충전 테스트 완료!")
 
     def update_c_type_status(self):
         """
         포트 상태에 따라 '테스트 중' 또는 '테스트 완료' 라벨을 갱신한다.
         """
         if all(self.c_type_ports.values()):
-            self.test_status_labels["C타입"].config(text="테스트 완료", foreground="blue")
+            self.test_status_labels["충전기"].config(text="테스트 완료", foreground="blue")
         else:
-            self.test_status_labels["C타입"].config(text="테스트 중", foreground="orange")
+            self.test_status_labels["충전기"].config(text="테스트 중", foreground="orange")
 
 
 if __name__ == "__main__":
