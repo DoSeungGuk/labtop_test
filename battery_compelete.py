@@ -6,6 +6,13 @@ import win32com.client  # WMI (pywin32)
 import ctypes
 from ctypes import wintypes  # ctypes.wintypes 임포트
 import psutil
+import subprocess
+import os
+import tempfile
+import webbrowser
+import qrcode
+from PIL import Image, ImageTk
+import re 
 
 # ---------------------------------------------
 # LRESULT, LONG_PTR를 플랫폼(32/64bit)에 맞게 정의
@@ -190,13 +197,20 @@ class LaptopTestApp(tk.Tk):
             "충전기": False,
         }
 
+        # 배터리 리포트 파일 경로를 저장할 변수 (초기에는 None)
+        self.report_path = None
+
         self.failed_keys = []  # 누르지 못한 키
         self.disabled_hwids = []
 
+         # 메인 프레임 생성
         main_frame = ttk.Frame(self)
         main_frame.pack(padx=20, pady=20, fill="both", expand=True)
+
+        # 타이틀 라벨
         title_label = ttk.Label(main_frame, text="노트북 기능 테스트", font=("Arial", 16))
         title_label.pack(pady=10)
+
         self.progress_label = ttk.Label(main_frame, text=self.get_progress_text(), font=("Arial", 12))
         self.progress_label.pack(pady=5)
 
@@ -214,11 +228,11 @@ class LaptopTestApp(tk.Tk):
         self.failed_keys_button = ttk.Button(kb_frame, text="누르지 못한 키 보기", command=self.show_failed_keys, state="disabled")
         self.failed_keys_button.pack(side="left", padx=5)
 
-        # USB 테스트
+        # USB 테스트 (port 수를 조절합니다.)
         self.usb_ports = {
-            "Port_1": False,
-            "Port_2": False,
-            "Port_3": False,
+            "port1": False,
+            "port2": False,
+            "port3": False,
         }
         self.usb_test_complete = False
 
@@ -249,7 +263,7 @@ class LaptopTestApp(tk.Tk):
         cam_status.pack(side="left", padx=10)
         self.test_status_labels["카메라"] = cam_status
 
-        # ---- 충전기 테스트 부분(질문 코드 통합) ----
+        # ---- 충전기 테스트 부분 ----
         # 충전기 포트 상태
         self.c_type_ports = {
             "충전기": False,
@@ -273,7 +287,35 @@ class LaptopTestApp(tk.Tk):
 
         self.c_type_port_labels = {}
         self.create_c_type_port_labels(main_frame)
-        # ---- 충전기 테스트 부분 끝 ----
+
+        # ---- 배터리 리포트 버튼 추가 ----
+        battery_report_frame = ttk.Frame(main_frame)
+        battery_report_frame.pack(fill="x", pady=3)
+
+        # 배터리 리포트 생성 버튼
+        self.battery_report_button = ttk.Button(
+            battery_report_frame, 
+            text="배터리 리포트 생성", 
+            command=self.generate_battery_report  # 버튼 클릭 시 generate_battery_report 메서드 호출
+        )
+        self.battery_report_button.pack(side="left")
+
+        # 배터리 리포트 확인 버튼
+        self.view_report_button = ttk.Button(
+            battery_report_frame,
+            text="리포트 확인",
+            command=self.view_battery_report  # 버튼 클릭 시 view_battery_report 메서드 호출
+        )
+        self.view_report_button.pack(side="left", padx=5)
+
+        # 테스트 결과와 배터리 리포트를 모아서 QR 코드 생성 버튼
+        self.qr_code_button = ttk.Button(
+            battery_report_frame,
+            text="QR 코드 생성",
+            command=self.generate_qr_code
+        )
+        self.qr_code_button.pack(side="left", padx=5)
+
 
     # 진행 상황 텍스트
     def get_progress_text(self):
@@ -459,9 +501,9 @@ class LaptopTestApp(tk.Tk):
 
     def start_usb_check(self):
         self.usb_ports = {
-            "Port_1": False,
-            "Port_2": False,
-            "Port_3": False,
+            "port1": False,
+            "port2": False,
+            "port3": False,
         }
         self.usb_test_complete = False
         for port_name, label in self.usb_port_labels.items():
@@ -478,27 +520,28 @@ class LaptopTestApp(tk.Tk):
             wmi_obj = win32com.client.GetObject("winmgmts:")
             pnp_entities = wmi_obj.InstancesOf("Win32_PnPEntity")
 
-            # 포트별 사용 중인 장치 인스턴스 경로를 환경에 맞춰 수정 가능
-            expected_device_paths = {
-                "Port_1": "USB\\VID_25A7&PID_2410\\5&218DD721&0&1",
-                "Port_2": "USB\\VID_25A7&PID_2410\\5&218DD721&0&2",
-                "Port_3": "USB\\VID_25A7&PID_2410\\5&218DD721&0&3",
-            }
-
+            # usb_ports와 usb_port_labels의 키를 "port1", "port2", "port3"으로 통일합니다.
+            # 예를 들어, self.usb_ports = {"port1": False, "port2": False, "port3": False}
             for entity in pnp_entities:
                 if hasattr(entity, 'PNPDeviceID') and entity.PNPDeviceID:
-                        device_path = entity.PNPDeviceID.upper()    
-                        if entity.PNPDeviceID:
-                            for port, expected_path_pattern in expected_device_paths.items():
-                                # 단순 prefix(혹은 substring) 체크 예시
-                                expected_path_prefix = expected_path_pattern.split("\\*")[0].upper()
-                                if expected_path_prefix in device_path:
-                                    self.usb_ports[port] = True
-                                    self.usb_port_labels[port].config(text=f"{port}: 연결됨", background="lightgreen")
-                                    break
-                else:
-                    continue
+                    # 대소문자 구분 없이 비교하기 위해 대문자로 변환
+                    device_path = entity.PNPDeviceID.upper()    
+                    
+                    # device_path가 "USB\"로 시작하는지 확인
+                    if not device_path.startswith("USB\\"):
+                        continue
 
+                    # device_path의 끝이 "&0&<숫자>"로 끝나는지 정규표현식으로 추출
+                    match = re.search(r'&0&(\d)$', device_path)
+                    if match:
+                        port_number = match.group(1)  # 추출된 숫자 (문자열)
+                        # 해당 숫자가 1, 2, 3 중 하나인 경우에만 처리
+                        if port_number in ['1', '2', '3']:
+                            # self.usb_ports의 키는 "port1", "port2", "port3"로 구성되어 있다고 가정
+                            key = f"port{port_number}"
+                            self.usb_ports[key] = True
+                            self.usb_port_labels[key].config(text=f"{key}: 연결됨", background="lightgreen")
+                            
             if all(self.usb_ports.values()):
                 self.usb_test_complete = True
                 self.usb_refresh_button.config(state="disabled")
@@ -510,7 +553,6 @@ class LaptopTestApp(tk.Tk):
 
         except Exception as e:
             messagebox.showerror("USB Error", f"Error checking USB ports:\n{e}")
-
     # ------------------ 카메라 테스트 ------------------
     def open_camera_test(self):
         cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
@@ -598,11 +640,10 @@ class LaptopTestApp(tk.Tk):
                 text="전원 연결됨 (충전 중)",
                 background="lightgreen"
             )
-            messagebox.showinfo("충전 Test", "충전 확인 완료!")
 
         else:
             # 두 포트 모두 이미 확인됨
-            messagebox.showinfo("충전 Test", "충전 가능 여부 확인되었습니다.")
+            messagebox.showinfo("충전 Test", "충전 확인되었습니다.")
 
         # 모두 연결되었다면 테스트 완료
         if all(self.c_type_ports.values()):
@@ -621,6 +662,111 @@ class LaptopTestApp(tk.Tk):
             self.test_status_labels["충전기"].config(text="테스트 완료", foreground="blue")
         else:
             self.test_status_labels["충전기"].config(text="테스트 중", foreground="orange")
+
+
+    # ==================== 배터리 리포트 생성 메서드 =============
+    def generate_battery_report(self):
+        """
+        powercfg /batteryreport 명령어를 실행하여 배터리 리포트를 생성하고,
+        생성된 리포트 파일의 경로를 사용자에게 알립니다.
+        """
+        try:
+            # 임시 디렉토리 생성 (리포트 파일을 저장할 위치)
+            temp_dir = tempfile.mkdtemp()
+            # 리포트 파일 경로 설정 (HTML 파일)
+            self.report_path = os.path.join(temp_dir, "battery_report.html")
+            
+            # powercfg /batteryreport 명령어 실행 ("/html" 매개변수 제거)
+            subprocess.run(
+                ["powercfg", "/batteryreport", "/output", self.report_path],
+                check=True,           # 오류 발생 시 예외 발생
+                capture_output=True,  # stdout, stderr 캡처
+                text=True             # 출력 결과를 문자열로 반환
+            )
+            
+            # 리포트 생성 성공 시 사용자에게 파일 경로 안내
+            messagebox.showinfo("배터리 리포트", 
+                                f"배터리 리포트가 생성되었습니다.\n파일 경로:\n{self.report_path}")
+        except subprocess.CalledProcessError as e:
+            # 명령어 실행 중 오류가 발생한 경우
+            messagebox.showerror("배터리 리포트 오류", 
+                                 f"명령 실행 중 오류 발생:\n{e.stderr}")
+        except Exception as e:
+            # 기타 예외 발생 시
+            messagebox.showerror("배터리 리포트 오류", 
+                                 f"오류 발생:\n{e}")
+            
+    
+    # ################# 배터리 리포트 확인 메서드 ######################
+    def view_battery_report(self):
+        """
+        생성된 배터리 리포트 파일을 확인합니다.
+        만약 리포트가 생성되지 않았다면 에러 메시지를 표시합니다.
+        """
+        if self.report_path and os.path.exists(self.report_path):
+            try:
+                # Windows의 경우 os.startfile()을 사용하여 파일 열기
+                os.startfile(self.report_path)
+            except Exception as e:
+                # 파일 열기 실패 시 에러 메시지 출력
+                messagebox.showerror("리포트 확인 오류", f"리포트를 열 수 없습니다:\n{e}")
+        else:
+            messagebox.showwarning("리포트 없음", "아직 배터리 리포트가 생성되지 않았습니다.\n먼저 '배터리 리포트 생성' 버튼을 눌러주세요.")
+
+    def generate_qr_code(self):
+        """
+        테스트 결과와 배터리 리포트 정보를 모아서 QR 코드를 생성합니다.
+        생성된 QR 코드는 새 창에서 이미지로 표시됩니다.
+        """
+        # 테스트 결과 문자열 생성
+        results_text = "테스트 결과:\n"
+        for test, done in self.test_done.items():
+            status = "완료" if done else "미완료"
+            results_text += f"{test}: {status}\n"
+
+        # 배터리 리포트 내용 읽기 (리포트 파일이 존재하면)
+        report_content = ""
+        if self.report_path and os.path.exists(self.report_path):
+            try:
+                with open(self.report_path, "r", encoding="utf-8") as f:
+                    report_content = f.read()
+            except Exception as e:
+                report_content = f"리포트 읽기 오류: {e}"
+        else:
+            report_content = "생성된 배터리 리포트가 없습니다."
+
+        # QR 코드에 포함할 전체 데이터 (테스트 결과 + 배터리 리포트 내용)
+        qr_data = results_text + "\n배터리 리포트 내용:\n" + report_content
+
+        # (주의) QR 코드 용량 제한으로 인해 데이터가 너무 길면 스캔이 어려울 수 있음.
+        try:
+            # QR 코드 객체 생성 (버전은 fit=True로 설정하여 데이터에 맞게 자동 확장)
+            qr = qrcode.QRCode(
+                version=None,  # 데이터에 따라 버전을 자동 결정
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=10,
+                border=4,
+            )
+            qr.add_data(qr_data)
+            qr.make(fit=True)
+
+            # QR 코드 이미지 생성 (PIL 이미지 객체)
+            img = qr.make_image(fill_color="black", back_color="white")
+            
+            # Tkinter에서 사용 가능한 이미지 객체로 변환
+            qr_img = ImageTk.PhotoImage(img)
+            
+            # QR 코드를 표시할 새 창 생성
+            qr_window = tk.Toplevel(self)
+            qr_window.title("테스트 결과 및 배터리 리포트 QR 코드")
+            
+            # QR 코드 이미지를 표시할 라벨 생성
+            qr_label = tk.Label(qr_window, image=qr_img)
+            qr_label.image = qr_img  # 이미지 객체 참조 유지 (가비지 컬렉션 방지)
+            qr_label.pack(padx=10, pady=10)
+        except Exception as e:
+            messagebox.showerror("QR 코드 생성 오류", f"QR 코드 생성 중 오류 발생:\n{e}")
+
 
 
 if __name__ == "__main__":
