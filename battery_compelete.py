@@ -715,36 +715,45 @@ class LaptopTestApp(tk.Tk):
 
     def generate_qr_code(self):
         """
-        테스트 결과와 배터리 리포트 정보를 모아서 QR 코드를 생성합니다.
-        생성된 QR 코드는 새 창에서 이미지로 표시됩니다.
+        상세 테스트 결과를 JSON 형식으로 구성하여 QR 코드를 생성합니다.
+        - keyboard: 테스트 결과와 실패 시 누르지 못한 키 목록 포함
+        - usb: 테스트 결과와 실패 시 연결되지 않은 포트 목록 포함
+        - camera, charger: 단순 pass/fail 상태 포함
+        - battery_report: 배터리 리포트 생성 여부 포함
         """
-        # 테스트 결과 문자열 생성
-        results_text = "테스트 결과:\n"
-        for test, done in self.test_done.items():
-            status = "완료" if done else "미완료"
-            results_text += f"{test}: {status}\n"
-
-        # 배터리 리포트 내용 읽기 (리포트 파일이 존재하면)
-        report_content = ""
-        if self.report_path and os.path.exists(self.report_path):
-            try:
-                with open(self.report_path, "r", encoding="utf-8") as f:
-                    report_content = f.read()
-            except Exception as e:
-                report_content = f"리포트 읽기 오류: {e}"
-        else:
-            report_content = "생성된 배터리 리포트가 없습니다."
-
-        # QR 코드에 포함할 전체 데이터 (테스트 결과 + 배터리 리포트 내용)
-        qr_data = results_text + "\n배터리 리포트 내용:\n" + report_content
-
-        # (주의) QR 코드 용량 제한으로 인해 데이터가 너무 길면 스캔이 어려울 수 있음.
+        import json  # JSON 모듈 임포트
+        
+        # 결과 데이터 딕셔너리 생성
+        results = {
+            "keyboard": {
+                "status": "pass" if self.test_done.get("키보드") else "fail",
+                # 키보드 테스트가 실패했으면 누르지 못한 키 목록 전달
+                "failed_keys": sorted(self.failed_keys) if not self.test_done.get("키보드") else []
+            },
+            "usb": {
+                "status": "pass" if self.test_done.get("USB") else "fail",
+                # USB 테스트가 실패했으면 연결되지 않은 포트 목록 전달 (예: port1, port2, port3 중 False인 항목)
+                "failed_ports": [port for port, connected in self.usb_ports.items() if not connected]
+            },
+            "camera": {
+                "status": "pass" if self.test_done.get("카메라") else "fail"
+            },
+            "charger": {
+                "status": "pass" if self.test_done.get("충전기") else "fail"
+            },
+            "battery_report": "생성됨" if self.report_path and os.path.exists(self.report_path) else "생성되지 않음"
+        }
+        
+        # JSON 문자열로 변환 (한글이 포함되므로 ensure_ascii=False로 처리)
+        qr_data = json.dumps(results, ensure_ascii=False, indent=2)
+        
+        # (주의) QR 코드에 너무 많은 데이터를 넣으면 용량 제한 문제로 스캔이 어려울 수 있음.
         try:
-            # QR 코드 객체 생성 (버전은 fit=True로 설정하여 데이터에 맞게 자동 확장)
+            # QR 코드 객체 생성 (데이터 크기에 따라 자동 버전 결정)
             qr = qrcode.QRCode(
-                version=None,  # 데이터에 따라 버전을 자동 결정
+                version=None,  
                 error_correction=qrcode.constants.ERROR_CORRECT_L,
-                box_size=10,
+                box_size=4,
                 border=4,
             )
             qr.add_data(qr_data)
@@ -753,20 +762,19 @@ class LaptopTestApp(tk.Tk):
             # QR 코드 이미지 생성 (PIL 이미지 객체)
             img = qr.make_image(fill_color="black", back_color="white")
             
-            # Tkinter에서 사용 가능한 이미지 객체로 변환
+            # Tkinter에서 사용할 수 있도록 이미지 객체 변환
             qr_img = ImageTk.PhotoImage(img)
             
             # QR 코드를 표시할 새 창 생성
             qr_window = tk.Toplevel(self)
-            qr_window.title("테스트 결과 및 배터리 리포트 QR 코드")
+            qr_window.title("상세 테스트 결과 QR 코드")
             
-            # QR 코드 이미지를 표시할 라벨 생성
+            # QR 코드 이미지를 표시할 라벨 생성 및 이미지 참조 유지
             qr_label = tk.Label(qr_window, image=qr_img)
-            qr_label.image = qr_img  # 이미지 객체 참조 유지 (가비지 컬렉션 방지)
+            qr_label.image = qr_img  
             qr_label.pack(padx=10, pady=10)
         except Exception as e:
             messagebox.showerror("QR 코드 생성 오류", f"QR 코드 생성 중 오류 발생:\n{e}")
-
 
 
 if __name__ == "__main__":
