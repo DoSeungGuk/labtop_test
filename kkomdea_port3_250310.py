@@ -1,10 +1,10 @@
 # ===============================
 # 표준 라이브러리 및 외부 라이브러리 임포트
 # ===============================
+import sys
 import os
 import re
 import subprocess
-import tempfile
 import logging
 import ctypes
 from ctypes import wintypes
@@ -18,11 +18,6 @@ import cv2
 import win32com.client
 import psutil
 import qrcode
-
-# ===============================
-# 로깅 기본 설정
-# ===============================
-logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # ===============================
 # Windows API 상수 및 구조체 정의
@@ -162,6 +157,16 @@ VK_MAPPING = {
     0x15: "한/영",
     0x19: "한자",
 }
+
+# exe 빌드 시 파일 경를 찾기 위한 함수
+def resource_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
+
+
 # ===============================
 # Raw Input 관련 유틸리티 함수
 # ===============================
@@ -208,7 +213,7 @@ class TestApp(ttkb.Window):
     def __init__(self):
         super().__init__(themename="flatly")
         self.title("KkomDae Diagnostics")
-        self.geometry("1200x800")
+        self.geometry("1200x950")
         self.resizable(False, False)
         self._style = ttkb.Style()
 
@@ -266,20 +271,21 @@ class TestApp(ttkb.Window):
         self.active_test_windows = {}
 
         # 폰트 경로 설정
-        self.samsung_bold_path = "SamsungSharpSans-Bold.ttf"
-        self.samsung_regular_path = "SamsungOne-400.ttf"
-        self.samsung_700_path = "SamsungOne-700.ttf"
-        self.notosans_path = "NotoSansKR-VariableFont_wght.ttf"
+        self.samsung_bold_path = resource_path("SamsungSharpSans-Bold.ttf")
+        self.samsung_regular_path = resource_path("SamsungOne-400.ttf")
+        self.samsung_700_path = resource_path("SamsungOne-700.ttf")
+        self.notosans_path = resource_path("NotoSansKR-VariableFont_wght.ttf")
 
-        # 테스트 아이콘 및 설명 데이터
+        # resource_path 함수를 이용해 이미지 파일의 경로를 동적으로 설정
         self.test_icons = {
-            "키보드": "keyboard.png",
-            "카메라": "camera.png",
-            "USB": "usb.png",
-            "충전": "charging.png",
-            "배터리": "battery.png",
-            "QR코드": "qrcode.png"
+            "키보드": resource_path("keyboard.png"),
+            "카메라": resource_path("camera.png"),
+            "USB": resource_path("usb.png"),
+            "충전": resource_path("charging.png"),
+            "배터리": resource_path("battery.png"),
+            "QR코드": resource_path("qrcode.png")
         }
+
         self.test_descriptions = {
             "키보드": "키 입력이 정상적으로 작동하는지 확인합니다.",
             "카메라": "카메라(웹캠)가 정상적으로 작동하는지 확인합니다.",
@@ -314,10 +320,10 @@ class TestApp(ttkb.Window):
         상단 타이틀 영역을 생성합니다.
         """
         title_frame = ttkb.Frame(self, style="Blue.TFrame")
-        title_frame.place(relx=0, rely=0, relwidth=1, relheight=0.35)
+        title_frame.place(relx=0, rely=0, relwidth=1, relheight=0.27)
 
         # SSAFY 로고 이미지 삽입
-        img_path = "ssafy_logo.png"
+        img_path = resource_path("ssafy_logo.png")
         image = Image.open(img_path).resize((80, 60), Image.LANCZOS)
         self.ssafy_logo = ImageTk.PhotoImage(image)
         img_label = ttkb.Label(title_frame, image=self.ssafy_logo, background="#0078D7", anchor="w")
@@ -701,6 +707,7 @@ class TestApp(ttkb.Window):
         def on_close_keyboard_window():
             """키보드 창 종료 시 누르지 않은 키가 있으면 기록합니다."""
             if self.keys_not_pressed:
+                unregister_raw_input()
                 self.failed_keys = list(self.keys_not_pressed)
                 self.test_status_labels["키보드"].config(text="오류 발생", bootstyle="danger")
                 self.failed_keys_button.config(state="normal")
@@ -765,7 +772,6 @@ class TestApp(ttkb.Window):
         """
         USB 테스트 초기화 후 상태 갱신 및 새로고침 버튼 활성화
         """
-        self.usb_ports = {"port1": False, "port2": False, "port3": False}
         self.usb_test_complete = False
         self.usb_refresh_button.config(state="normal", bootstyle="info")
         self.test_status_labels["USB"].config(text="테스트 중", bootstyle="warning")
